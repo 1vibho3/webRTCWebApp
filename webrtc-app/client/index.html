@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html>
 <head>
     <title>WebTransport Client</title>
@@ -26,4 +26,50 @@
         connect();
     </script>
 </body>
-</html>
+</html> -->
+
+<script>
+  async function connect() {
+    const url = 'https://localhost:4433/session';
+    const transport = new WebTransport(url);
+    await transport.ready;
+
+    // 1) Set up WebRTC PeerConnection
+    const pc = new RTCPeerConnection();
+
+    // (optional) use a data channel purely to kick off ICE gathering
+    const dc = pc.createDataChannel('wt-bridge');
+
+    // 2) Open a WebTransport bidi-stream
+    const stream = await transport.createBidirectionalStream();
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    
+    // send SDP offer once ICE gathering finishes
+    pc.onicecandidate = event => {
+      if (event.candidate === null) {
+        const offer = pc.localDescription;
+        writer.write(
+          new TextEncoder().encode(JSON.stringify(offer))
+        );
+      }
+    };
+
+    // 3) Create and send the SDP offer
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    // onicecandidate handler will fire and send the offer
+
+    // 4) Read the SDP answer from server
+    const { value } = await reader.read();
+    const answer = JSON.parse(new TextDecoder().decode(value));
+    await pc.setRemoteDescription(answer);
+
+    console.log('WebRTC handshake complete');
+    pc.oniceconnectionstatechange = () => {
+        console.log("ICE connection state:", pc.iceConnectionState);
+    };
+  }
+
+  connect();
+</script>
